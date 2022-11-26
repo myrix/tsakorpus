@@ -10,7 +10,7 @@ have imagined.
 """
 
 
-from . import sentView, settings
+from flask import current_app
 
 
 class SearchContext:
@@ -63,14 +63,14 @@ class SearchContext:
                 prevID = sent['_source']['prev_id']
             if (len(sentData['header_csv']) <= 0
                     or (len(sentData['header_csv']) == 1 and len(sentData['header_csv'][0]) <= 0)):
-                sentData['header_csv'] = sentView.process_sentence_header(sent['_source'],
+                sentData['header_csv'] = current_app.sentView.process_sentence_header(sent['_source'],
                                                                           format='csv')
             if 'lang' in sent['_source']:
                 langID = sent['_source']['lang']
-                highlightedText = sentView.process_sentence_csv(sent,
-                                                                lang=settings.languages[langID],
+                highlightedText = current_app.sentView.process_sentence_csv(sent,
+                                                                lang=current_app.settings.languages[langID],
                                                                 translit=self.translit)
-            lang = settings.languages[langID]
+            lang = current_app.settings.languages[langID]
             langView = lang
             if 'transVar' in sent['_source']:
                 langView += '_' + str(sent['_source']['transVar'])
@@ -125,7 +125,7 @@ class SearchContext:
                                 'header_csv': ['']}
             if not hit['toggled_on']:
                 sentPageDataDict['toggled_off'] = True
-            for lang in settings.languages:
+            for lang in current_app.settings.languages:
                 if lang not in self.sentence_data[iHit]['languages']:
                     sentPageDataDict['highlighted_text_csv'].append('')
                 else:

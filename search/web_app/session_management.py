@@ -3,11 +3,11 @@ Manage session data and cookies.
 """
 
 
-from flask import session
+from flask import current_app, session
 import uuid
 import random
 import re
-from . import settings, sessionData, MAX_PAGE_SIZE
+from . import sessionData, MAX_PAGE_SIZE
 from .search_context import SearchContext
 
 
@@ -22,7 +22,7 @@ def initialize_session():
     sessionData[session['session_id']] = {'page_size': 10,
                                           'page': 1,
                                           'login': False,
-                                          'locale': settings.default_locale,
+                                          'locale': current_app.settings.default_locale,
                                           'sort': '',
                                           'distance_strict': False,
                                           'last_query': {},

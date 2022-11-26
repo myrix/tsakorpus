@@ -8,8 +8,8 @@ processing the hits using response_processors.
 import copy
 import math
 import time
-from flask import request
-from . import sc, sentView, settings, MIN_TOTAL_FREQ_WORD_QUERY, rxIndexAtEnd
+from flask import current_app, request
+from . import MIN_TOTAL_FREQ_WORD_QUERY, rxIndexAtEnd
 from .session_management import set_session_data, get_session_data, get_locale, change_display_options, cur_search_context
 from .auxiliary_functions import jsonp, gzipped, nocache, lang_sorting_key, copy_request_args,\
     wilson_confidence_interval, distance_constraints_too_complex, log_query
@@ -25,7 +25,7 @@ def find_parallel_for_one_sent(sSource):
         sids |= set(pa['sent_ids'])
     sids = list(sid for sid in sorted(sids))
     query = {'query': {'ids': {'values': sids}}}
-    paraSentHits = sc.get_sentences(query)
+    paraSentHits = current_app.sc.get_sentences(query)
     if 'hits' in paraSentHits and 'hits' in paraSentHits['hits']:
         return paraSentHits['hits']['hits']
     return []
@@ -41,11 +41,11 @@ def get_parallel_for_one_sent_html(sSource, numHit):
         curSearchContext.last_sent_num += 1
         curSearchContext.add_sent_data_for_session(s, curSearchContext.sentence_data[numHit])
         langID = s['_source']['lang']
-        lang = settings.languages[langID]
+        lang = current_app.settings.languages[langID]
         langView = lang
         if 'transVar' in s['_source']:
             langView += '_' + str(s['_source']['transVar'])
-        sentHTML = sentView.process_sentence(s,
+        sentHTML = current_app.sentView.process_sentence(s,
                                              numSent=curSearchContext.last_sent_num,
                                              getHeader=False,
                                              lang=lang,
@@ -89,7 +89,7 @@ def get_buckets_for_doc_metafield(fieldName, langID=-1, docIDs=None, maxBuckets=
     Return a dictionary with the values and corresponding document
     count.
     """
-    if fieldName not in settings.search_meta['stat_options'] or langID >= len(settings.languages) > 1:
+    if fieldName not in current_app.settings.search_meta['stat_options'] or langID >= len(current_app.settings.languages) > 1:
         return {}
     innerQuery = {'match_all': {}}
     if docIDs is not None:
@@ -98,12 +98,12 @@ def get_buckets_for_doc_metafield(fieldName, langID=-1, docIDs=None, maxBuckets=
         queryFieldName = fieldName + '_kw'
     else:
         queryFieldName = fieldName
-    if len(settings.languages) == 1 or langID < 0:
+    if len(current_app.settings.languages) == 1 or langID < 0:
         nWordsFieldName = 'n_words'
         nSentsFieldName = 'n_sents'
     else:
-        nWordsFieldName = 'n_words_' + settings.languages[langID]
-        nSentsFieldName = 'n_sents_' + settings.languages[langID]
+        nWordsFieldName = 'n_words_' + current_app.settings.languages[langID]
+        nSentsFieldName = 'n_sents_' + current_app.settings.languages[langID]
     esQuery = {
         'query': innerQuery,
         'size': 0,
@@ -128,7 +128,7 @@ def get_buckets_for_doc_metafield(fieldName, langID=-1, docIDs=None, maxBuckets=
             }
         }
     }
-    hits = sc.get_docs(esQuery)
+    hits = current_app.sc.get_docs(esQuery)
     if 'aggregations' not in hits or 'metafield' not in hits['aggregations']:
         return {}
     buckets = []
@@ -157,7 +157,7 @@ def suggest_metafield(fieldName, query):
     Return autocomplete suggestions for a metafield based on a partial
     query typed by the user.
     """
-    if fieldName not in settings.search_meta['stat_options']:
+    if fieldName not in current_app.settings.search_meta['stat_options']:
         return []
     if len(query.replace('*', '')) < 2:
         return []
@@ -180,12 +180,12 @@ def suggest_metafield(fieldName, query):
             'metafield': {
                 'terms': {
                     'field': queryFieldName,
-                    'size': settings.max_suggestions
+                    'size': current_app.settings.max_suggestions
                 }
             }
         }
     }
-    hits = sc.get_docs(esQuery)
+    hits = current_app.sc.get_docs(esQuery)
     if 'aggregations' not in hits or 'metafield' not in hits['aggregations']:
         return {}
     buckets = []
@@ -194,8 +194,8 @@ def suggest_metafield(fieldName, query):
                           'data': bucket['doc_count']}
         buckets.append(bucketListItem)
     buckets.sort(key=lambda b: (-b['data'], b['value']))
-    if len(buckets) > settings.max_suggestions:
-        buckets = buckets[:settings.max_suggestions]
+    if len(buckets) > current_app.settings.max_suggestions:
+        buckets = buckets[:current_app.settings.max_suggestions]
     return buckets
 
 
@@ -204,7 +204,7 @@ def suggest_word(lang, fieldName, query):
     Return autocomplete suggestions for a word or lemma field
     based on a partial query typed by the user.
     """
-    if lang not in settings.languages:
+    if lang not in current_app.settings.languages:
         return []
     if len(query.replace('*', '')) < 2:
         return []
@@ -213,7 +213,7 @@ def suggest_word(lang, fieldName, query):
     wtype = 'word'
     if fieldName == 'lex':
         wtype = 'lemma'
-    langID = settings.languages.index(lang)
+    langID = current_app.settings.languages.index(lang)
     esQuery = {
         'query': {
             'bool': {
@@ -243,14 +243,14 @@ def suggest_word(lang, fieldName, query):
             }
         },
         '_source': ['wf', 'freq'],
-        'size': settings.max_suggestions * 2,   # perform limited bucketing afterwards to save time
+        'size': current_app.settings.max_suggestions * 2,   # perform limited bucketing afterwards to save time
         'sort': {
             'freq': {
                 'order': 'desc'
             }
         }
     }
-    hits = sc.get_words(esQuery)
+    hits = current_app.sc.get_words(esQuery)
     if 'hits' not in hits or 'hits' not in hits['hits']:
         return {}
     dictSuggestions = {}
@@ -265,7 +265,7 @@ def suggest_word(lang, fieldName, query):
             dictSuggestions[wf] += freq
     suggestions = []
     for wf in sorted(dictSuggestions, key=lambda w: (-dictSuggestions[w], w)):
-        if len(suggestions) >= settings.max_suggestions:
+        if len(suggestions) >= current_app.settings.max_suggestions:
             break
         suggestion = {'value': wf,
                       'data': dictSuggestions[wf]}
@@ -282,7 +282,7 @@ def get_buckets_for_sent_metafield(fieldName, langID=-1, docIDs=None, maxBuckets
     Return a dictionary with the values and corresponding sentence/word
     count.
     """
-    if fieldName not in settings.search_meta['stat_options'] or langID >= len(settings.languages) > 1:
+    if fieldName not in current_app.settings.search_meta['stat_options'] or langID >= len(current_app.settings.languages) > 1:
         return {}
     if langID >= 0:
         innerQuery = {'match': {'lang': langID}}
@@ -319,7 +319,7 @@ def get_buckets_for_sent_metafield(fieldName, langID=-1, docIDs=None, maxBuckets
             }
         }
     }
-    hits = sc.get_sentences(esQuery)
+    hits = current_app.sc.get_sentences(esQuery)
     if 'aggregations' not in hits or 'metafield' not in hits['aggregations']:
         return {}
     buckets = []
@@ -352,10 +352,10 @@ def get_word_buckets(searchType, metaField, nWords, htmlQuery,
     of a word/context over the values of a document-level or a
     sentence-level metafield.
     """
-    bSentenceLevel = (metaField in settings.sentence_meta)
+    bSentenceLevel = (metaField in current_app.settings.sentence_meta)
     if bSentenceLevel:
         queryFieldName = 'sent_meta_' + metaField + '_kw1'
-    elif metaField not in settings.line_plot_meta:
+    elif metaField not in current_app.settings.line_plot_meta:
         queryFieldName = metaField + '_kw'
     else:
         queryFieldName = metaField
@@ -382,8 +382,8 @@ def get_word_buckets(searchType, metaField, nWords, htmlQuery,
             if searchType == 'context':
                 curHtmlQuery = copy.deepcopy(htmlQuery)
             else:
-                curHtmlQuery = sc.qp.swap_query_words(1, iWord, copy.deepcopy(htmlQuery))
-                curHtmlQuery = sc.qp.remove_non_first_words(curHtmlQuery)
+                curHtmlQuery = current_app.sc.qp.swap_query_words(1, iWord, copy.deepcopy(htmlQuery))
+                curHtmlQuery = current_app.sc.qp.remove_non_first_words(curHtmlQuery)
                 curHtmlQuery['lang1'] = htmlQuery['lang1']
                 curHtmlQuery['n_words'] = 1
             # if metaField not in curHtmlQuery or len(curHtmlQuery[metaField]) <= 0:
@@ -392,7 +392,7 @@ def get_word_buckets(searchType, metaField, nWords, htmlQuery,
             #     curHtmlQuery[metaField] += ',' + bucket['name']
             if not bSentenceLevel:
                 curHtmlQuery['doc_ids'] = subcorpus_ids(curHtmlQuery)
-            query = sc.qp.html2es(curHtmlQuery,
+            query = current_app.sc.qp.html2es(curHtmlQuery,
                                   searchOutput=searchIndex,
                                   groupBy='word',
                                   sortOrder='no',
@@ -400,7 +400,7 @@ def get_word_buckets(searchType, metaField, nWords, htmlQuery,
                                   distances=queryWordConstraints,
                                   highlight=False)
             if searchIndex == 'words' and newBucket['n_words'] > 0:
-                hits = sc.get_words(query)
+                hits = current_app.sc.get_words(query)
                 if ('aggregations' not in hits
                     or 'agg_freq' not in hits['aggregations']
                     or 'agg_ndocs' not in hits['aggregations']
@@ -415,7 +415,7 @@ def get_word_buckets(searchType, metaField, nWords, htmlQuery,
                 newBucket['n_words'] = successRate * 1000000
                 newBucket['n_sents'] = hits['aggregations']['agg_ndocs']['value'] / newBucket['n_docs'] * 100
             elif searchIndex == 'sentences' and newBucket['n_words'] > 0:
-                hits = sc.get_sentences(query)
+                hits = current_app.sc.get_sentences(query)
                 if ('aggregations' not in hits
                     or 'agg_nwords' not in hits['aggregations']
                     or 'agg_ndocs' not in hits['aggregations']
@@ -449,11 +449,11 @@ def subcorpus_ids(htmlQuery):
     Return IDs of the documents specified by the subcorpus selection
     fields in htmlQuery.
     """
-    subcorpusQuery = sc.qp.subcorpus_query(htmlQuery, sortOrder='',
+    subcorpusQuery = current_app.sc.qp.subcorpus_query(htmlQuery, sortOrder='',
                                            exclude=get_session_data('excluded_doc_ids'))
     if subcorpusQuery is None or ('query' in subcorpusQuery and subcorpusQuery['query'] == {'match_all': {}}):
         return None
-    iterator = sc.get_all_docs(subcorpusQuery)
+    iterator = current_app.sc.get_all_docs(subcorpusQuery)
     docIDs = []
     for doc in iterator:
         docIDs.append(doc['_id'])
@@ -468,17 +468,17 @@ def para_ids(htmlQuery):
     Return the query for the first language and para_ids conforming to the other
     parts of the query.
     """
-    langQueryParts = sc.qp.split_query_into_languages(htmlQuery)
+    langQueryParts = current_app.sc.qp.split_query_into_languages(htmlQuery)
     if langQueryParts is None or len(langQueryParts) <= 1:
         return htmlQuery, None
     paraIDs = None
     for i in range(1, len(langQueryParts)):
         lpHtmlQuery = langQueryParts[i]
-        paraIDQuery = sc.qp.para_id_query(lpHtmlQuery)
+        paraIDQuery = current_app.sc.qp.para_id_query(lpHtmlQuery)
         if paraIDQuery is None:
             return None
         curParaIDs = set()
-        iterator = sc.get_all_sentences(paraIDQuery)
+        iterator = current_app.sc.get_all_sentences(paraIDQuery)
         for dictParaID in iterator:
             if '_source' not in dictParaID or 'para_ids' not in dictParaID['_source']:
                 continue
@@ -494,12 +494,12 @@ def para_ids(htmlQuery):
 
 
 def count_occurrences(query, distances=None):
-    esQuery = sc.qp.html2es(query,
+    esQuery = current_app.sc.qp.html2es(query,
                             searchOutput='sentences',
                             sortOrder='no',
                             query_size=1,
                             distances=distances)
-    hits = sc.get_sentences(esQuery)
+    hits = current_app.sc.get_sentences(esQuery)
     # print(hits)
     if ('aggregations' in hits
             and 'agg_nwords' in hits['aggregations']
@@ -519,13 +519,13 @@ def find_sentences_json(page=0):
         change_display_options(query)
         sortOrder = get_session_data('sort')
         if (sortOrder not in ('random', 'freq', 'year')
-                or sortOrder == 'year' and not settings.year_sort_enabled
-                or sortOrder == '' and not settings.debug):
+                or sortOrder == 'year' and not current_app.settings.year_sort_enabled
+                or sortOrder == '' and not current_app.settings.debug):
             set_session_data('sort', 'random')
         elif sortOrder == '':
             set_session_data('sort', 'no')
         set_session_data('last_query', query)
-        wordConstraints = sc.qp.wr.get_constraints(query)
+        wordConstraints = current_app.sc.qp.wr.get_constraints(query)
         set_session_data('word_constraints', wordConstraints)
     else:
         query = get_session_data('last_query')
@@ -561,17 +561,17 @@ def find_sentences_json(page=0):
             and get_session_data('distance_strict')
             and 'sent_ids' not in query
             and distance_constraints_too_complex(wordConstraints)):
-        esQuery = sc.qp.html2es(query,
+        esQuery = current_app.sc.qp.html2es(query,
                                 searchOutput='sentences',
                                 query_size=1,
                                 distances=wordConstraints)
-        hits = sc.get_sentences(esQuery)
+        hits = current_app.sc.get_sentences(esQuery)
         if ('hits' not in hits
                 or 'total' not in hits['hits']
-                or hits['hits']['total']['value'] > settings.max_distance_filter):
+                or hits['hits']['total']['value'] > current_app.settings.max_distance_filter):
             query = {}
         else:
-            esQuery = sc.qp.html2es(query,
+            esQuery = current_app.sc.qp.html2es(query,
                                     searchOutput='sentences',
                                     distances=wordConstraints)
             if '_source' not in esQuery:
@@ -579,8 +579,8 @@ def find_sentences_json(page=0):
             # esQuery['_source']['excludes'] = ['words.ana', 'words.wf']
             esQuery['_source'] = ['words.next_word', 'words.wtype']
             # TODO: separate threshold for this?
-            iterator = sc.get_all_sentences(esQuery)
-            query['sent_ids'] = sc.qp.filter_sentences(iterator, wordConstraints, nWords=nWords)
+            iterator = current_app.sc.get_all_sentences(esQuery)
+            query['sent_ids'] = current_app.sc.qp.filter_sentences(iterator, wordConstraints, nWords=nWords)
             set_session_data('last_query', query)
 
     queryWordConstraints = None
@@ -595,7 +595,7 @@ def find_sentences_json(page=0):
                  or not distance_constraints_too_complex(wordConstraints))):
         nOccurrences = count_occurrences(query, distances=queryWordConstraints)
 
-    esQuery = sc.qp.html2es(query,
+    esQuery = current_app.sc.qp.html2es(query,
                             searchOutput='sentences',
                             sortOrder=get_session_data('sort'),
                             randomSeed=get_session_data('seed'),
@@ -604,10 +604,10 @@ def find_sentences_json(page=0):
                             distances=queryWordConstraints)
 
     # return esQuery
-    hits = sc.get_sentences(esQuery)
+    hits = current_app.sc.get_sentences(esQuery)
     if nWords > 1 and 'hits' in hits and 'hits' in hits['hits']:
         for hit in hits['hits']['hits']:
-            sentView.filter_multi_word_highlight(hit, nWords=nWords, negWords=negWords)
+            current_app.sentView.filter_multi_word_highlight(hit, nWords=nWords, negWords=negWords)
     if 'aggregations' in hits and 'agg_nwords' in hits['aggregations']:
         if nOccurrences > 0:
             hits['aggregations']['agg_nwords']['sum'] = nOccurrences
@@ -621,7 +621,7 @@ def find_sentences_json(page=0):
                  or distance_constraints_too_complex(wordConstraints))
             and 'hits' in hits and 'hits' in hits['hits']):
         for hit in hits['hits']['hits']:
-            hit['toggled_on'] = sc.qp.wr.check_sentence(hit, wordConstraints, nWords=nWords)
+            hit['toggled_on'] = current_app.sc.qp.wr.check_sentence(hit, wordConstraints, nWords=nWords)
     if docIDs is not None and len(docIDs) > 0:
         hits['subcorpus_enabled'] = True
     return hits
@@ -671,7 +671,7 @@ def find_words_json(searchType='word', page=0):
         # aggregate the first search term
         searchIndex = 'sentences'
         sortOrder = 'random'  # in this case, the words are sorted after the search
-        wordConstraints = sc.qp.wr.get_constraints(query)
+        wordConstraints = current_app.sc.qp.wr.get_constraints(query)
         set_session_data('word_constraints', wordConstraints)
         if (len(wordConstraints) > 0
                 and get_session_data('distance_strict')):
@@ -690,7 +690,7 @@ def find_words_json(searchType='word', page=0):
     if subcorpus and page >= 2:
         querySize = get_session_data('page_size') * page
 
-    query = sc.qp.html2es(query,
+    query = current_app.sc.qp.html2es(query,
                           searchOutput='words',
                           groupBy=searchType,
                           sortOrder=sortOrder,
@@ -702,18 +702,18 @@ def find_words_json(searchType='word', page=0):
                           after_key=cur_search_context().after_key)
     # print(query)
 
-    maxRunTime = time.time() + settings.query_timeout
+    maxRunTime = time.time() + current_app.settings.query_timeout
     hitsProcessed = {}
     if searchIndex == 'words':
         # One-word search (easy)
-        hits = sc.get_words(query)
+        hits = current_app.sc.get_words(query)
         if subcorpus:
             # Since subcorpus word search uses non-composite buckets,
             # the only way to paginate is to look up everything up to
             # the current page and then leave only the current page.
             hits['aggregations']['agg_group_by_word']['buckets'] = hits['aggregations']['agg_group_by_word']['buckets'][
                                                                    -get_session_data('page_size'):]
-        hitsProcessed = sentView.process_word_json(hits,
+        hitsProcessed = current_app.sentView.process_word_json(hits,
                                                    searchType=searchType,
                                                    subcorpus=subcorpus,
                                                    translit=cur_search_context().translit)
@@ -739,11 +739,11 @@ def find_words_json(searchType='word', page=0):
                 'word_ids': {}
             }
             # print(query)
-            for hit in sc.get_all_sentences(query):
+            for hit in current_app.sc.get_all_sentences(query):
                 if constraintsTooComplex:
-                    if not sc.qp.wr.check_sentence(hit, wordConstraints, nWords=nWords):
+                    if not current_app.sc.qp.wr.check_sentence(hit, wordConstraints, nWords=nWords):
                         continue
-                sentView.add_word_from_sentence(hitsProcessedAll, hit, nWords=nWords,
+                current_app.sentView.add_word_from_sentence(hitsProcessedAll, hit, nWords=nWords,
                                                 negWords=negWords, searchType=searchType)
                 if hitsProcessedAll['total_freq'] >= MIN_TOTAL_FREQ_WORD_QUERY and time.time() > maxRunTime:
                     hitsProcessedAll['timeout'] = True
@@ -752,7 +752,7 @@ def find_words_json(searchType='word', page=0):
         else:
             hitsProcessedAll = cur_search_context().processed_words
         if hitsProcessedAll['n_docs'] > 0:
-            hitsProcessed = sentView.process_words_collected_from_sentences(hitsProcessedAll,
+            hitsProcessed = current_app.sentView.process_words_collected_from_sentences(hitsProcessedAll,
                                                                             sortOrder=get_session_data('sort'),
                                                                             startFrom=(get_session_data(
                                                                                 'page') - 1) * get_session_data(
@@ -767,8 +767,8 @@ def find_words_json(searchType='word', page=0):
         else:
             hitsProcessed = hitsProcessedAll
 
-    hitsProcessed['media'] = settings.media
-    hitsProcessed['images'] = settings.images
+    hitsProcessed['media'] = current_app.settings.media
+    hitsProcessed['images'] = current_app.settings.images
     set_session_data('progress', 100)
     return hitsProcessed
 
@@ -784,14 +784,14 @@ def find_sent_context(curSentData, n):
     adjacentIDs = {lang: {'next': -1, 'prev': -1} for lang in curSentData['languages']}
     for lang in curSentData['languages']:
         try:
-            langID = settings.languages.index(lang)
+            langID = current_app.settings.languages.index(lang)
         except:
             # Language + number of the translation version: chop off the number
-            langID = settings.languages.index(rxIndexAtEnd.sub('', lang))
+            langID = current_app.settings.languages.index(rxIndexAtEnd.sub('', lang))
         for side in ['next', 'prev']:
             curCxLang = context['languages'][lang]
             if side + '_id' in curSentData['languages'][lang]:
-                curCxLang[side] = sc.get_sentence_by_id(curSentData['languages'][lang][side + '_id'])
+                curCxLang[side] = current_app.sc.get_sentence_by_id(curSentData['languages'][lang][side + '_id'])
             if (side in curCxLang
                     and len(curCxLang[side]) > 0
                     and 'hits' in curCxLang[side]
@@ -809,17 +809,17 @@ def find_sent_context(curSentData, n):
                 # lang and langReal can be different if there are tiers that
                 # contain sentences in more than one language.
                 if '_source' in curSent and curSent['_source']['lang'] != langID:
-                    langReal = settings.languages[curSent['_source']['lang']]
+                    langReal = current_app.settings.languages[curSent['_source']['lang']]
                 if '_source' in curSent and side + '_id' in curSent['_source']:
                     adjacentIDs[lang][side] = curSent['_source'][side + '_id']
-                expandedContext = sentView.process_sentence(curSent,
+                expandedContext = current_app.sentView.process_sentence(curSent,
                                                             numSent=lastSentNum,
                                                             getHeader=False,
                                                             lang=langReal,
                                                             translit=cur_search_context().translit)
                 curCxLang[side] = expandedContext['languages'][langReal]['text']
-                if settings.media:
-                    sentView.relativize_src_alignment(expandedContext, curSentData['src_alignment_files'])
+                if current_app.settings.media:
+                    current_app.sentView.relativize_src_alignment(expandedContext, curSentData['src_alignment_files'])
                     if 'src_alignment' in expandedContext:
                         context['src_alignment'].update(expandedContext['src_alignment'])
                 cur_search_context().last_sent_num = lastSentNum

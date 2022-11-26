@@ -3,7 +3,7 @@ Contains Flask view functions associated with certain URLs.
 """
 
 
-from flask import request, render_template, jsonify, send_from_directory
+from flask import current_app, request, render_template, jsonify, send_from_directory, Blueprint
 import json
 import copy
 import re
@@ -13,25 +13,28 @@ import shutil
 import uuid
 import xlsxwriter
 from werkzeug.utils import secure_filename
-from . import app, settings, sc, sentView, MAX_PAGE_SIZE
+from . import MAX_PAGE_SIZE
 from .session_management import get_locale, get_session_data, change_display_options, set_session_data
 from .auxiliary_functions import jsonp, gzipped, nocache, lang_sorting_key, copy_request_args,\
     distance_constraints_too_complex, remove_sensitive_data, log_query
 from .search_pipelines import *
 
+search = Blueprint('search', __name__)
 
-@app.route('/search')
-@app.route('/search_minimalistic')
+@search.route('/search')
+@search.route('/search_minimalistic')
 def search_page():
     """
     Return HTML of the search page (the main page of the corpus).
     """
+    settings = current_app.settings
+
     queryString = ''
     if request.query_string is not None:
         queryString = request.query_string.decode('utf-8')
     ready4work = settings.ready_for_work
     if settings.ready_for_work:
-        ready4work = sc.is_alive()
+        ready4work = current_app.sc.is_alive()
     bMinimalistic = ('minimalistic' in request.url_rule.rule)
     locales = settings.interface_languages
     if type(locales) == list:
@@ -74,145 +77,145 @@ def search_page():
                            query_string=queryString)
 
 
-@app.route('/search_sent_query/<int:page>')
-@app.route('/search_sent_query')
+@search.route('/search_sent_query/<int:page>')
+@search.route('/search_sent_query')
 @jsonp
 def search_sent_query(page=-1):
     """
     Return list of all ES queries made when searching for sentences.
     """
-    if not settings.debug:
+    if not current_app.settings.debug:
         return jsonify({})
-    sc.start_query_logging()
+    current_app.sc.start_query_logging()
     search_sent(page=page)
-    queryLog = sc.stop_logging()
+    queryLog = current_app.sc.stop_logging()
     return jsonify(queryLog)
 
 
-@app.route('/search_lemma_query/<int:page>')
-@app.route('/search_lemma_query')
+@search.route('/search_lemma_query/<int:page>')
+@search.route('/search_lemma_query')
 @jsonp
 def search_lemma_query(page=-1):
     """
     Return list of all ES queries made when searching for lemmata.
     """
-    if not settings.debug:
+    if not current_app.settings.debug:
         return jsonify({})
-    sc.start_query_logging()
+    current_app.sc.start_query_logging()
     search_lemma(page=page)
-    queryLog = sc.stop_logging()
+    queryLog = current_app.sc.stop_logging()
     return jsonify(queryLog)
 
 
-@app.route('/search_word_query/<int:page>')
-@app.route('/search_word_query')
+@search.route('/search_word_query/<int:page>')
+@search.route('/search_word_query')
 @jsonp
 def search_word_query(page=-1):
     """
     Return list of all ES queries made when searching for words.
     """
-    if not settings.debug:
+    if not current_app.settings.debug:
         return jsonify({})
-    sc.start_query_logging()
+    current_app.sc.start_query_logging()
     search_word(page=page)
-    queryLog = sc.stop_logging()
+    queryLog = current_app.sc.stop_logging()
     return jsonify(queryLog)
 
 
-@app.route('/search_doc_query')
+@search.route('/search_doc_query')
 @jsonp
 def search_doc_query():
     """
     Return list of all ES queries made when searching for subcorpus documents.
     """
-    if not settings.debug:
+    if not current_app.settings.debug:
         return jsonify({})
-    sc.start_query_logging()
+    current_app.sc.start_query_logging()
     search_doc()
-    queryLog = sc.stop_logging()
+    queryLog = current_app.sc.stop_logging()
     return jsonify(queryLog)
 
 
-@app.route('/search_sent_json/<int:page>')
-@app.route('/search_sent_json')
+@search.route('/search_sent_json/<int:page>')
+@search.route('/search_sent_json')
 @jsonp
 def search_sent_json(page=-1):
     """
     Return list of all ES responses made when searching for sentences, except for iterators.
     """
-    if not settings.debug:
+    if not current_app.settings.debug:
         return jsonify({})
-    sc.start_hits_logging()
+    current_app.sc.start_hits_logging()
     search_sent(page=page)
-    hitsLog = sc.stop_logging()
+    hitsLog = current_app.sc.stop_logging()
     return jsonify(hitsLog)
 
 
-@app.route('/search_lemma_json/<int:page>')
-@app.route('/search_lemma_json')
+@search.route('/search_lemma_json/<int:page>')
+@search.route('/search_lemma_json')
 @jsonp
 def search_lemma_json(page=-1):
     """
     Return list of all ES responses made when searching for lemmata, except for iterators.
     """
-    if not settings.debug:
+    if not current_app.settings.debug:
         return jsonify({})
-    sc.start_hits_logging()
+    current_app.sc.start_hits_logging()
     search_lemma(page=page)
-    hitsLog = sc.stop_logging()
+    hitsLog = current_app.sc.stop_logging()
     return jsonify(hitsLog)
 
 
-@app.route('/search_word_json/<int:page>')
-@app.route('/search_word_json')
+@search.route('/search_word_json/<int:page>')
+@search.route('/search_word_json')
 @jsonp
 def search_word_json(page=-1):
     """
     Return list of all ES responses made when searching for words, except for iterators.
     """
-    if not settings.debug:
+    if not current_app.settings.debug:
         return jsonify({})
-    sc.start_hits_logging()
+    current_app.sc.start_hits_logging()
     search_word(page=page)
-    hitsLog = sc.stop_logging()
+    hitsLog = current_app.sc.stop_logging()
     return jsonify(hitsLog)
 
 
-@app.route('/search_doc_json')
+@search.route('/search_doc_json')
 @jsonp
 def search_doc_json():
     """
     Return list of all ES responses made when searching for subcorpus documents, except for iterators.
     """
-    if not settings.debug:
+    if not current_app.settings.debug:
         return jsonify({})
-    sc.start_hits_logging()
+    current_app.sc.start_hits_logging()
     search_doc()
-    hitsLog = sc.stop_logging()
+    hitsLog = current_app.sc.stop_logging()
     return jsonify(hitsLog)
 
 
-@app.route('/doc_stats/<metaField>/<lang>')
-@app.route('/doc_stats/<metaField>')
+@search.route('/doc_stats/<metaField>/<lang>')
+@search.route('/doc_stats/<metaField>')
 def get_doc_stats(metaField, lang='all'):
     """
     Return JSON with basic statistics concerning the distribution
     of corpus documents by values of one metafield. This function
     can be used to visualise (sub)corpus composition.
     """
-    if metaField not in settings.search_meta['stat_options']:
+    if metaField not in current_app.settings.search_meta['stat_options']:
         return jsonify({})
     query = copy_request_args()
     change_display_options(query)
     docIDs = subcorpus_ids(query)
     langID = -1
-    if lang != 'all' and lang in settings.languages:
-        langID = settings.languages.index(lang)
+    if lang != 'all' and lang in current_app.settings.languages:
+        langID = current_app.settings.languages.index(lang)
     buckets = get_buckets_for_doc_metafield(metaField, langID=langID, docIDs=docIDs)
     return jsonify(buckets)
 
 
-@app.route('/word_freq_stats/<searchType>')
+@search.route('/word_freq_stats/<searchType>')
 def get_word_freq_stats(searchType='word'):
     """
     Return JSON with the distribution of a particular kind of words
@@ -236,25 +239,25 @@ def get_word_freq_stats(searchType='word'):
             nWords = 10
     if searchType not in ('word', 'lemma'):
         searchType = 'word'
-    if 'lang1' in htmlQuery and htmlQuery['lang1'] in settings.languages:
-        langID = settings.languages.index(htmlQuery['lang1'])
+    if 'lang1' in htmlQuery and htmlQuery['lang1'] in current_app.settings.languages:
+        langID = current_app.settings.languages.index(htmlQuery['lang1'])
     else:
         return jsonify([])
     results = []
     for iWord in range(1, nWords + 1):
         htmlQuery['lang' + str(iWord)] = htmlQuery['lang1']
-        partHtmlQuery = sc.qp.swap_query_words(1, iWord, copy.deepcopy(htmlQuery))
-        esQuery = sc.qp.word_freqs_query(partHtmlQuery, searchType=searchType)
+        partHtmlQuery = current_app.sc.qp.swap_query_words(1, iWord, copy.deepcopy(htmlQuery))
+        esQuery = current_app.sc.qp.word_freqs_query(partHtmlQuery, searchType=searchType)
         # print(esQuery)
-        hits = sc.get_words(esQuery)
+        hits = current_app.sc.get_words(esQuery)
         # return jsonify(hits)
-        curFreqByRank = sentView.extract_cumulative_freq_by_rank(hits)
+        curFreqByRank = current_app.sentView.extract_cumulative_freq_by_rank(hits)
         buckets = []
         prevFreq = 0
         if searchType == 'lemma':
-            freq_by_rank = settings.lemma_freq_by_rank
+            freq_by_rank = current_app.settings.lemma_freq_by_rank
         else:
-            freq_by_rank = settings.word_freq_by_rank
+            freq_by_rank = current_app.settings.word_freq_by_rank
         for freqRank in sorted(freq_by_rank[langID]):
             bucket = {
                 'name': freqRank,
@@ -270,7 +273,7 @@ def get_word_freq_stats(searchType='word'):
     return jsonify(results)
 
 
-@app.route('/word_stats/<searchType>/<metaField>')
+@search.route('/word_stats/<searchType>/<metaField>')
 def get_word_stats(searchType, metaField):
     """
     Return JSON with basic statistics concerning the distribution
@@ -290,7 +293,7 @@ def get_word_stats(searchType, metaField):
     inside each bucket. If it is a sentence-level field, do a single
     search in the sentence index with bucketing.
     """
-    if metaField not in settings.search_meta['stat_options']:
+    if metaField not in current_app.settings.search_meta['stat_options']:
         return jsonify([])
     if searchType not in ('compare', 'context'):
         return jsonify([])
@@ -303,24 +306,24 @@ def get_word_stats(searchType, metaField):
         change_display_options(htmlQuery)
     log_query('word_stats/' + searchType + '/' + metaField, htmlQuery)
     langID = -1
-    if 'lang1' in htmlQuery and htmlQuery['lang1'] in settings.languages:
-        langID = settings.languages.index(htmlQuery['lang1'])
+    if 'lang1' in htmlQuery and htmlQuery['lang1'] in current_app.settings.languages:
+        langID = current_app.settings.languages.index(htmlQuery['lang1'])
     nWords = 1
     if 'n_words' in htmlQuery and int(htmlQuery['n_words']) > 1:
         nWords = int(htmlQuery['n_words'])
         if searchType == 'compare':
             if nWords > 10:
                 nWords = 10
-            # if metaField not in settings.line_plot_meta:
+            # if metaField not in current_app.settings.line_plot_meta:
             #     nWords = 1
 
     searchIndex = 'words'
     queryWordConstraints = None
     if ((searchType == 'context' and nWords > 1)
-            or metaField in settings.sentence_meta
-            or sc.qp.check_html_parameters(htmlQuery, searchOutput='words')[3] == 'sentences'):
+            or metaField in current_app.settings.sentence_meta
+            or current_app.sc.qp.check_html_parameters(htmlQuery, searchOutput='words')[3] == 'sentences'):
         searchIndex = 'sentences'
-        wordConstraints = sc.qp.wr.get_constraints(htmlQuery)
+        wordConstraints = current_app.sc.qp.wr.get_constraints(htmlQuery)
         set_session_data('word_constraints', wordConstraints)
         if (len(wordConstraints) > 0
                 and get_session_data('distance_strict')):
@@ -333,8 +336,8 @@ def get_word_stats(searchType, metaField):
     return jsonify(results)
 
 
-@app.route('/search_sent/<int:page>')
-@app.route('/search_sent')
+@search.route('/search_sent/<int:page>')
+@search.route('/search_sent')
 @gzipped
 def search_sent(page=-1):
     if page < 0:
@@ -345,30 +348,30 @@ def search_sent(page=-1):
     # except:
     #     return render_template('search_results/result_sentences.html', message='Request timeout.')
     cur_search_context().add_sent_to_session(hits)
-    hitsProcessed = sentView.process_sent_json(hits,
+    hitsProcessed = current_app.sentView.process_sent_json(hits,
                                                translit=cur_search_context().translit)
-    # hitsProcessed['languages'] = settings.languages
-    if len(settings.languages) > 1 and 'hits' in hits and 'hits' in hits['hits']:
+    # hitsProcessed['languages'] = current_app.settings.languages
+    if len(current_app.settings.languages) > 1 and 'hits' in hits and 'hits' in hits['hits']:
         add_parallel(hits['hits']['hits'], hitsProcessed)
     hitsProcessed['languages'].sort(key=lang_sorting_key)
     hitsProcessed['page'] = get_session_data('page')
     hitsProcessed['page_size'] = get_session_data('page_size')
-    hitsProcessed['media'] = settings.media
-    hitsProcessed['images'] = settings.images
+    hitsProcessed['media'] = current_app.settings.media
+    hitsProcessed['images'] = current_app.settings.images
     hitsProcessed['subcorpus_enabled'] = False
     if 'subcorpus_enabled' in hits:
         hitsProcessed['subcorpus_enabled'] = True
     cur_search_context().sync_page_data(hitsProcessed['page'], hitsProcessed)
-    maxPageNumber = (min(hitsProcessed['n_sentences'], settings.max_hits_retrieve) - 1) \
+    maxPageNumber = (min(hitsProcessed['n_sentences'], current_app.settings.max_hits_retrieve) - 1) \
                     // hitsProcessed['page_size'] + 1
-    hitsProcessed['too_many_hits'] = (settings.max_hits_retrieve < hitsProcessed['n_sentences'])
+    hitsProcessed['too_many_hits'] = (current_app.settings.max_hits_retrieve < hitsProcessed['n_sentences'])
 
     return render_template('search_results/result_sentences.html',
                            data=hitsProcessed,
                            max_page_number=maxPageNumber)
 
 
-@app.route('/get_sent_context/<int:n>')
+@search.route('/get_sent_context/<int:n>')
 @jsonp
 def get_sent_context(n):
     """
@@ -383,21 +386,21 @@ def get_sent_context(n):
     if sentData is None or n >= len(sentData) or 'languages' not in sentData[n]:
         return jsonify({})
     curSentData = sentData[n]
-    if curSentData['times_expanded'] >= settings.max_context_expand >= 0:
+    if curSentData['times_expanded'] >= current_app.settings.max_context_expand >= 0:
         return jsonify({})
     context, adjacentIDs = find_sent_context(curSentData, n)
     cur_search_context().update_expanded_contexts(context, adjacentIDs)
     return jsonify(context)
 
 
-@app.route('/search_lemma/<int:page>')
-@app.route('/search_lemma')
+@search.route('/search_lemma/<int:page>')
+@search.route('/search_lemma')
 def search_lemma(page=-1):
     return search_word(searchType='lemma', page=page)
 
 
-@app.route('/search_word/<int:page>')
-@app.route('/search_word')
+@search.route('/search_word/<int:page>')
+@search.route('/search_word')
 def search_word(searchType='word', page=-1):
     if page < 0:
         cur_search_context().flush()
@@ -408,51 +411,51 @@ def search_word(searchType='word', page=-1):
         bShowNextButton = False
     return render_template('search_results/result_words.html',
                            data=hitsProcessed,
-                           word_table_fields=settings.word_table_fields,
-                           word_search_display_gr=settings.word_search_display_gr,
-                           display_freq_rank=settings.display_freq_rank,
+                           word_table_fields=current_app.settings.word_table_fields,
+                           word_search_display_gr=current_app.settings.word_search_display_gr,
+                           display_freq_rank=current_app.settings.display_freq_rank,
                            search_type=searchType,
                            page=get_session_data('page'),
                            show_next=bShowNextButton)
 
 
-@app.route('/search_doc')
+@search.route('/search_doc')
 @jsonp
 def search_doc():
     query = copy_request_args()
     log_query('doc', query)
     change_display_options(query)
-    query = sc.qp.subcorpus_query(query,
+    query = current_app.sc.qp.subcorpus_query(query,
                                   sortOrder=get_session_data('sort'),
-                                  query_size=settings.max_docs_retrieve)
-    hits = sc.get_docs(query)
-    hitsProcessed = sentView.process_docs_json(hits,
+                                  query_size=current_app.settings.max_docs_retrieve)
+    hits = current_app.sc.get_docs(query)
+    hitsProcessed = current_app.sentView.process_docs_json(hits,
                                                exclude=get_session_data('excluded_doc_ids'),
-                                               corpusSize=settings.corpus_size)
-    hitsProcessed['media'] = settings.media
-    hitsProcessed['images'] = settings.images
+                                               corpusSize=current_app.settings.corpus_size)
+    hitsProcessed['media'] = current_app.settings.media
+    hitsProcessed['images'] = current_app.settings.images
     return render_template('search_results/result_docs.html', data=hitsProcessed,
-                           sentence_meta=settings.sentence_meta)
+                           sentence_meta=current_app.settings.sentence_meta)
 
 
-@app.route('/autocomplete_meta/<metafield>')
+@search.route('/autocomplete_meta/<metafield>')
 @jsonp
 def autocomplete_meta(metafield):
     if 'query' not in request.args:
         return jsonify({'query': '', 'suggestions': []})
     query = request.args['query']
-    if metafield not in settings.viewable_meta:
+    if metafield not in current_app.settings.viewable_meta:
         return jsonify({'query': query, 'suggestions': []})
     suggests = suggest_metafield(metafield, query)
     return jsonify({'query': query,
                     'suggestions': suggests})
 
 
-@app.route('/autocomplete_word/<lang>/<field>')
+@search.route('/autocomplete_word/<lang>/<field>')
 @jsonp
 def autocomplete_word(lang, field):
     if ('query' not in request.args
-            or lang not in settings.languages
+            or lang not in current_app.settings.languages
             or field not in ('wf', 'lex')):
         return jsonify({'query': '', 'suggestions': []})
     query = request.args['query']
@@ -461,12 +464,13 @@ def autocomplete_word(lang, field):
                     'suggestions': suggests})
 
 
-@app.route('/get_word_fields')
+@search.route('/get_word_fields')
 def get_word_fields():
     """
     Return HTML with form inputs representing all additional
     word-level annotation fields.
     """
+    settings = current_app.settings
     return render_template('index/common_additional_search_fields.html',
                            word_fields=settings.word_fields,
                            sentence_meta=settings.sentence_meta,
@@ -477,36 +481,36 @@ def get_word_fields():
                            ambiguous_analyses=settings.ambiguous_analyses)
 
 
-@app.route('/media/<path:path>')
+@search.route('/media/<path:path>')
 def send_media(path):
     """
     Return the requested media file.
     """
-    return send_from_directory(os.path.join('../media', settings.corpus_name), path)
+    return send_from_directory(os.path.join('../media', current_app.settings.corpus_name), path)
 
 
-@app.route('/img/<path:path>')
+@search.route('/img/<path:path>')
 def send_image(path):
     """
     Return the requested image file.
     """
-    return send_from_directory(os.path.join('../img', settings.corpus_name), path)
+    return send_from_directory(os.path.join('../img', current_app.settings.corpus_name), path)
 
 
-@app.route('/docs/<doc_fname>')
+@search.route('/docs/<doc_fname>')
 @gzipped
 def send_text_html(doc_fname):
     """
     Return the requested document, if full-text view is enabled.
     """
-    if not settings.fulltext_view_enabled:
+    if not current_app.settings.fulltext_view_enabled:
         return ''
     doc_fname = secure_filename(re.sub('\\.html?$', '', doc_fname))
     if not doc_fname.endswith('.json'):
         doc_fname += '.json'
     try:
         with open(os.path.join('corpus_html',
-                               settings.corpus_name,
+                               current_app.settings.corpus_name,
                                doc_fname),
                   'r', encoding='utf-8') as fText:
             data = json.load(fText)
@@ -517,7 +521,7 @@ def send_text_html(doc_fname):
             'page': 1
         }
     data['meta'] = {k: data['meta'][k]
-                    for k in data['meta'] if k in settings.viewable_meta}
+                    for k in data['meta'] if k in current_app.settings.viewable_meta}
     page = request.args.get('page', 1)
     try:
         page = int(page) - 1
@@ -525,26 +529,26 @@ def send_text_html(doc_fname):
         page = 0
     if page < 0:
         page = 0
-    maxPage = len(data['rows']) // settings.fulltext_page_size
+    maxPage = len(data['rows']) // current_app.settings.fulltext_page_size
     if page > maxPage:
         page = maxPage
-    data['rows'] = data['rows'][page * settings.fulltext_page_size:
-                                (page + 1) * settings.fulltext_page_size]
+    data['rows'] = data['rows'][page * current_app.settings.fulltext_page_size:
+                                (page + 1) * current_app.settings.fulltext_page_size]
     data['page'] = page + 1
     return render_template('fulltext.html',
                            locale=get_locale(),
-                           corpus_name=settings.corpus_name,
-                           languages=settings.languages,
-                           generate_dictionary=settings.generate_dictionary,
-                           citation=settings.citation,
-                           start_page_url=settings.start_page_url,
-                           locales=settings.interface_languages,
-                           viewable_meta=settings.viewable_meta,
+                           corpus_name=current_app.settings.corpus_name,
+                           languages=current_app.settings.languages,
+                           generate_dictionary=current_app.settings.generate_dictionary,
+                           citation=current_app.settings.citation,
+                           start_page_url=current_app.settings.start_page_url,
+                           locales=current_app.settings.interface_languages,
+                           viewable_meta=current_app.settings.viewable_meta,
                            data=data,
                            max_page_number=maxPage + 1)
 
 
-@app.route('/download_cur_results_csv')
+@search.route('/download_cur_results_csv')
 @nocache
 def download_cur_results_csv():
     """
@@ -558,7 +562,7 @@ def download_cur_results_csv():
     return '\n'.join(['\t'.join(s) for s in result if len(s) > 0])
 
 
-@app.route('/download_cur_results_xlsx')
+@search.route('/download_cur_results_xlsx')
 @nocache
 def download_cur_results_xlsx():
     """
@@ -581,7 +585,7 @@ def download_cur_results_xlsx():
     return send_from_directory('../tmp', XLSXFilename)
 
 
-@app.route('/toggle_sentence/<int:sentNum>')
+@search.route('/toggle_sentence/<int:sentNum>')
 def toggle_sentence(sentNum):
     """
     Toggle currently viewed sentence with the given number on or off.
@@ -600,15 +604,15 @@ def toggle_sentence(sentNum):
     return ''
 
 
-@app.route('/toggle_doc/<int:docID>')
+@search.route('/toggle_doc/<int:docID>')
 def toggle_document(docID):
     """
     Toggle given docID on or off. The documents that have been switched off
     are not included in the search.
     """
     excludedDocIDs = get_session_data('excluded_doc_ids')
-    nWords = sc.get_n_words_in_document(docId=docID)
-    sizePercent = round(nWords * 100 / settings.corpus_size, 3)
+    nWords = current_app.sc.get_n_words_in_document(docId=docID)
+    sizePercent = round(nWords * 100 / current_app.settings.corpus_size, 3)
     if docID in excludedDocIDs:
         excludedDocIDs.remove(docID)
         nDocs = 1
@@ -620,7 +624,7 @@ def toggle_document(docID):
     return jsonify({'n_words': nWords, 'n_docs': nDocs, 'size_percent': sizePercent})
 
 
-@app.route('/clear_subcorpus')
+@search.route('/clear_subcorpus')
 def clear_subcorpus():
     """
     Flush the list of excluded document IDs.
@@ -629,40 +633,40 @@ def clear_subcorpus():
     return ''
 
 
-@app.route('/get_gramm_selector/<lang>')
+@search.route('/get_gramm_selector/<lang>')
 def get_gramm_selector(lang=''):
     """
     Return HTML of the grammatical tags selection dialogue for the given language.
     """
-    if lang not in settings.lang_props or 'gramm_selection' not in settings.lang_props[lang]:
+    if lang not in current_app.settings.lang_props or 'gramm_selection' not in current_app.settings.lang_props[lang]:
         return ''
-    grammSelection = settings.lang_props[lang]['gramm_selection']
+    grammSelection = current_app.settings.lang_props[lang]['gramm_selection']
     return render_template('modals/select_gramm.html', tag_table=grammSelection)
 
 
-@app.route('/get_add_field_selector/<field>')
+@search.route('/get_add_field_selector/<field>')
 def get_add_field_selector(field=''):
     """
     Return HTML of the tags selection dialogue for an additional word-level field.
     """
-    if field not in settings.multiple_choice_fields:
+    if field not in current_app.settings.multiple_choice_fields:
         return ''
-    tagSelection = settings.multiple_choice_fields[field]
+    tagSelection = current_app.settings.multiple_choice_fields[field]
     return render_template('modals/select_gramm.html', tag_table=tagSelection)
 
 
-@app.route('/get_gloss_selector/<lang>')
+@search.route('/get_gloss_selector/<lang>')
 def get_gloss_selector(lang=''):
     """
     Return HTML of the gloss selection dialogue for the given language.
     """
-    if lang not in settings.lang_props or 'gloss_selection' not in settings.lang_props[lang]:
+    if lang not in current_app.settings.lang_props or 'gloss_selection' not in current_app.settings.lang_props[lang]:
         return ''
-    glossSelection = settings.lang_props[lang]['gloss_selection']
+    glossSelection = current_app.settings.lang_props[lang]['gloss_selection']
     return render_template('modals/select_gloss.html', glosses=glossSelection)
 
 
-@app.route('/get_glossed_sentence/<int:n>')
+@search.route('/get_glossed_sentence/<int:n>')
 def get_glossed_sentence(n):
     """
     Return a tab-delimited glossed sentence ready for insertion into
@@ -677,67 +681,67 @@ def get_glossed_sentence(n):
     for langView in curSentData['languages']:
         lang = langView
         try:
-            langID = settings.languages.index(langView)
+            langID = current_app.settings.languages.index(langView)
         except:
             # Language + number of the translation version: chop off the number
-            langID = settings.languages.index(re.sub('_[0-9]+$', '', langView))
-            lang = settings.languages[langID]
+            langID = current_app.settings.languages.index(re.sub('_[0-9]+$', '', langView))
+            lang = current_app.settings.languages[langID]
         if langID != 0:
             continue  # for now
-        result = sentView.get_glossed_sentence(curSentData['languages'][langView]['source'], lang=lang)
+        result = current_app.sentView.get_glossed_sentence(curSentData['languages'][langView]['source'], lang=lang)
         if type(result) == str:
             return result
         return ''
     return ''
 
 
-@app.route('/set_locale/<lang>')
-@app.route('/docs/set_locale/<lang>')
+@search.route('/set_locale/<lang>')
+@search.route('/docs/set_locale/<lang>')
 def set_locale(lang=''):
-    if type(settings.interface_languages) == dict and lang not in settings.interface_languages:
-        for il in settings.interface_languages:
-            if settings.interface_languages[il] == lang:
+    if type(current_app.settings.interface_languages) == dict and lang not in current_app.settings.interface_languages:
+        for il in current_app.settings.interface_languages:
+            if current_app.settings.interface_languages[il] == lang:
                 lang = il
                 break
-    if lang not in settings.interface_languages:
+    if lang not in current_app.settings.interface_languages:
         return
     set_session_data('locale', lang)
     return ''
 
 
-@app.route('/help_dialogue')
-@app.route('/docs/help_dialogue')
+@search.route('/help_dialogue')
+@search.route('/docs/help_dialogue')
 def help_dialogue():
     l = get_locale()
     return render_template('modals/help_dialogue_' + l + '.html',
-                           media=settings.media,
-                           video=settings.video,
-                           gloss_search_enabled=settings.gloss_search_enabled)
+                           media=current_app.settings.media,
+                           video=current_app.settings.video,
+                           gloss_search_enabled=current_app.settings.gloss_search_enabled)
 
 
-@app.route('/docs/dictionary/<lang>')
-@app.route('/dictionary/<lang>')
+@search.route('/docs/dictionary/<lang>')
+@search.route('/dictionary/<lang>')
 @gzipped
 def get_dictionary(lang):
-    if not settings.generate_dictionary:
+    if not current_app.settings.generate_dictionary:
         return 'No dictionary available for this language.'
-    dictFilename = 'dictionaries/dictionary_' + settings.corpus_name + '_' + lang + '.html'
+    dictFilename = 'dictionaries/dictionary_' + current_app.settings.corpus_name + '_' + lang + '.html'
     try:
         return render_template(dictFilename)
     except:
         return ''
 
 
-@app.route('/config')
+@search.route('/config')
 def setup_corpus():
     if not request.host.strip('/').endswith(('0.0.0.0:7342', '127.0.0.1:7342')):
         return 'This page can only be accessed from localhost.', 403
     return render_template('admin/corpus_setup.html',
                            filename=os.path.abspath('../USER_CONFIG/corpus.json'),
-                           settings=settings.as_dict())
+                           settings=current_app.settings.as_dict())
 
 
-@app.route('/config_update', methods=['POST'])
+@search.route('/config_update', methods=['POST'])
 def setup_corpus_save_changes():
     if not request.host.strip('/').endswith(('0.0.0.0:7342', '127.0.0.1:7342')):
         return 'This page can only be accessed from localhost.', 403
@@ -746,6 +750,6 @@ def setup_corpus_save_changes():
         shutil.rmtree('../USER_CONFIG')
     time.sleep(0.5)
     os.makedirs('../USER_CONFIG/translations')
-    settings.save_settings(os.path.abspath('../USER_CONFIG/corpus.json'), data=data)
-    settings.prepare_translations(os.path.abspath('../USER_CONFIG/translations'), data=data)
+    current_app.settings.save_settings(os.path.abspath('../USER_CONFIG/corpus.json'), data=data)
+    current_app.settings.prepare_translations(os.path.abspath('../USER_CONFIG/translations'), data=data)
     return jsonify(result='OK')

@@ -192,6 +192,7 @@ class PrepareData:
                 and len(self.settings['author_metafield']) > 0
                 and self.settings['author_metafield'] not in metaFields):
             metaFields.append(self.settings['author_metafield'])
+
         for meta in metaFields:
             if meta.startswith('year') or ('integer_meta_fields' in self.settings
                                            and meta in self.settings['integer_meta_fields']):

@@ -25,16 +25,18 @@ class SearchClient:
     Contains methods for querying the corpus database.
     """
 
-    def __init__(self, settings_dir, settings):
+    def __init__(self, settings_dir, settings, es = None):
         self.settings = settings
         self.name = self.settings.corpus_name
         esTimeout = max(20, self.settings.query_timeout)
-        self.es = None
-        if self.settings.elastic_url is not None and len(self.settings.elastic_url) > 0:
-            # Connect to a non-default URL or supply username and password
-            self.es = Elasticsearch([self.settings.elastic_url], timeout=esTimeout)
+        if es is None:
+            if self.settings.elastic_url is not None and len(self.settings.elastic_url) > 0:
+                # Connect to a non-default URL or supply username and password
+                self.es = Elasticsearch([self.settings.elastic_url], timeout=esTimeout)
+            else:
+                self.es = Elasticsearch(timeout=esTimeout)
         else:
-            self.es = Elasticsearch(timeout=esTimeout)
+            self.es = es
         self.es_ic = IndicesClient(self.es)
         self.qp = InterfaceQueryParser(settings_dir, self.settings)
         self.logging = 'none'   # none|query|hits

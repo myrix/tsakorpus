@@ -5,7 +5,6 @@ import math
 import json
 import time
 from flask import request, current_app, after_this_request, make_response
-from . import settings
 from .transliteration import *
 
 
@@ -72,13 +71,13 @@ def lang_sorting_key(lang):
     Function for sorting language names in the output according
     to the general order provided by the settings.
     """
-    if lang in settings.languages:
-        return settings.languages.index(lang), -1, ''
-    elif re.sub('_[0-9]+$', '', lang) in settings.languages:
-        return (settings.languages.index(re.sub('_[0-9]+$', '', lang)),
+    if lang in current_app.settings.languages:
+        return current_app.settings.languages.index(lang), -1, ''
+    elif re.sub('_[0-9]+$', '', lang) in current_app.settings.languages:
+        return (current_app.settings.languages.index(re.sub('_[0-9]+$', '', lang)),
                 int(re.sub('^.*_', '', lang)), '')
     else:
-        return len(settings.languages), 0, lang
+        return len(current_app.settings.languages), 0, lang
 
 
 def copy_request_args():
@@ -179,7 +178,7 @@ def log_query(queryType, args, fnameLog='query_log.txt'):
     """
     Log the query if the settings allow that.
     """
-    if not settings.query_log:
+    if not current_app.settings.query_log:
         return
     logString = time.strftime('%Y-%m-%d %H:%M') + '\t' + queryType + '\t' \
                 + json.dumps(args, indent=None, sort_keys=True, ensure_ascii=False) + '\n'

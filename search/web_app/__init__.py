@@ -1,4 +1,5 @@
 from flask import Flask
+from flask_babel import Babel
 from elasticsearch.exceptions import ConnectionError, NotFoundError
 import sys
 import subprocess
@@ -24,13 +25,13 @@ def load_csv_translations(fname, pfx=''):
     return translations
 
 
-def generate_po(lang):
+def generate_po(lang, translations_dir):
     """
     Generate a messages.po translation file for pybabel based on
     the contents of translations/lang
     """
-    srcDir = os.path.join('web_app/translations', lang)
-    targetDir = os.path.join('web_app/translations_pybabel', lang, 'LC_MESSAGES')
+    srcDir = os.path.join(translations_dir, lang)
+    targetDir = os.path.join(translations_dir + '_pybabel', lang, 'LC_MESSAGES')
     if not os.path.exists(srcDir):
         return
     if not os.path.exists(targetDir):
@@ -64,7 +65,7 @@ def generate_po(lang):
             print('Something went wrong when generating interface translations.')
 
 
-def compile_translations():
+def compile_translations(translations_dir):
     """
     Compile flask_babel translations.
     """
@@ -78,7 +79,7 @@ def compile_translations():
     else:
         pyBabelPath = os.path.join(pythonPath, 'Scripts', 'pybabel')
     try:
-        subprocess.run([pyBabelPath, 'compile',  '-d', 'translations_pybabel'], cwd='web_app', check=True)
+        subprocess.run([pyBabelPath, 'compile',  '-d', translations_dir + '_pybabel'], cwd='web_app', check=True)
     except:
         print('Could not compile translations with ' + pyBabelPath + ' .')
     else:
@@ -96,60 +97,91 @@ random.seed()
 rxIndexAtEnd = re.compile('_[0-9]+$')
 
 
-# Read settings before we import anything else. Many modules
-# imported after this point reference the settings object,
-# therefore it has to exist at import time.
-from .corpus_settings import CorpusSettings
-settings = CorpusSettings()
-settings.load_settings(os.path.join(SETTINGS_DIR, 'corpus.json'),
-                       os.path.join(SETTINGS_DIR, 'categories.json'))
-
-# Prepare pybabel translations
-for lang in settings.interface_languages:
-    generate_po(lang)
-compile_translations()
-
-# Continue with module imports. Beware that there are other
-# circular import issues, so the order of imported modules
-# should not change.
-from search_engine.client import SearchClient
-from .response_processors import SentenceViewer
-localizations = {}
-sc = SearchClient(SETTINGS_DIR, settings)
-sentView = SentenceViewer(settings, sc)
-sc.qp.rp = sentView
-sc.qp.wr.rp = sentView
-
-try:
-    settings.corpus_size = sc.get_n_words()  # size of the corpus in words
-    for lang in settings.languages:
-        # number of word types for each frequency rank
-        settings.word_freq_by_rank.append(sentView.extract_cumulative_freq_by_rank(sc.get_word_freq_by_rank(lang)))
-        # number of lemmata for each frequency rank
-        settings.lemma_freq_by_rank.append(sentView.extract_cumulative_freq_by_rank(sc.get_lemma_freq_by_rank(lang)))
-    settings.ready_for_work = True
-except (ConnectionError, NotFoundError):
-    # Elasticsearch is down
-    settings.corpus_size = 0
-    for lang in settings.languages:
-        settings.word_freq_by_rank.append({})
-        settings.lemma_freq_by_rank.append({})
-sc.qp.maxFreqRank = max(max(len(settings.word_freq_by_rank[i]), len(settings.lemma_freq_by_rank[i]))
-                        for i in range(len(settings.languages))) + 1
+from . import session_management
+from . import views
 
 
-app = Flask(__name__)
-app.secret_key = 'kkj6hd)^js7#dFQ'
+def create_app(
+    data_dir,
+    translations_dir,
+    es = None):
 
-app.config.update(dict(
-    LANGUAGES=settings.interface_languages,
-    BABEL_DEFAULT_LOCALE=settings.default_locale,
-    BABEL_TRANSLATION_DIRECTORIES='translations_pybabel',
-    SESSION_COOKIE_SAMESITE='Lax',
-    SESSION_COOKIE_NAME='tsakorpus_session'
-))
+    settings_dir = (
+        os.path.join(data_dir, 'conf'))
 
-if settings.session_cookie_domain is not None and len(settings.session_cookie_domain) > 0:
-    app.config['SESSION_COOKIE_DOMAIN'] = settings.session_cookie_domain
+    # Read settings before we import anything else. Many modules
+    # imported after this point reference the settings object,
+    # therefore it has to exist at import time.
+    from .corpus_settings import CorpusSettings
+    settings = CorpusSettings()
+    settings.load_settings(os.path.join(settings_dir, 'corpus.json'),
+                           os.path.join(settings_dir, 'categories.json'))
 
-from .views import *
+    translations_dir = (
+        os.path.abspath(translations_dir))
+
+    os.makedirs(
+        translations_dir + '_pybabel',
+        exist_ok = True)
+
+    # Prepare pybabel translations
+    for lang in settings.interface_languages:
+        generate_po(lang, translations_dir)
+    compile_translations(translations_dir)
+
+    # Continue with module imports. Beware that there are other
+    # circular import issues, so the order of imported modules
+    # should not change.
+    from search_engine.client import SearchClient
+    from .response_processors import SentenceViewer
+    localizations = {}
+    sc = SearchClient(settings_dir, settings, es)
+    sentView = SentenceViewer(settings, sc)
+    sc.qp.rp = sentView
+    sc.qp.wr.rp = sentView
+
+    try:
+        settings.corpus_size = sc.get_n_words()  # size of the corpus in words
+        for lang in settings.languages:
+            # number of word types for each frequency rank
+            settings.word_freq_by_rank.append(sentView.extract_cumulative_freq_by_rank(sc.get_word_freq_by_rank(lang)))
+            # number of lemmata for each frequency rank
+            settings.lemma_freq_by_rank.append(sentView.extract_cumulative_freq_by_rank(sc.get_lemma_freq_by_rank(lang)))
+        settings.ready_for_work = True
+    except (ConnectionError, NotFoundError):
+        # Elasticsearch is down
+        settings.corpus_size = 0
+        for lang in settings.languages:
+            settings.word_freq_by_rank.append({})
+            settings.lemma_freq_by_rank.append({})
+    sc.qp.maxFreqRank = max(max(len(settings.word_freq_by_rank[i]), len(settings.lemma_freq_by_rank[i]))
+                            for i in range(len(settings.languages))) + 1
+
+    app = Flask(__name__)
+    app.secret_key = 'kkj6hd)^js7#dFQ'
+
+    app.config.update(dict(
+        LANGUAGES=settings.interface_languages,
+        BABEL_DEFAULT_LOCALE=settings.default_locale,
+        BABEL_TRANSLATION_DIRECTORIES=translations_dir + '_pybabel',
+        SESSION_COOKIE_SAMESITE='Lax',
+        SESSION_COOKIE_NAME='tsakorpus_session'
+    ))
+
+    if settings.session_cookie_domain is not None and len(settings.session_cookie_domain) > 0:
+        app.config['SESSION_COOKIE_DOMAIN'] = settings.session_cookie_domain
+
+    app.register_blueprint(views.search)
+
+    app.settings = settings
+    app.sc = sc
+    app.sentView = sentView
+
+    babel = Babel(app)
+
+    @babel.localeselector
+    def get_locale():
+        return session_management.get_locale()
+
+    return app
+

@@ -25,8 +25,11 @@ class Indexator:
     SETTINGS_DIR = '../conf'
     rxBadFileName = re.compile('[^\\w_.-]*', flags=re.DOTALL)
 
-    def __init__(self, overwrite=False):
+    def __init__(self, overwrite=False, tsakorpus_dir='..', data_dir='..'):
         self.overwrite = overwrite  # whether to overwrite an existing index without asking
+        self.tsakorpus_dir = tsakorpus_dir
+        self.data_dir = data_dir
+        self.SETTINGS_DIR = os.path.join(data_dir, 'conf')
         with open(os.path.join(self.SETTINGS_DIR, 'corpus.json'),
                   'r', encoding='utf-8') as fSettings:
             self.settings = json.load(fSettings)
@@ -36,7 +39,7 @@ class Indexator:
         if len(self.languages) <= 0:
             self.languages = [self.name]
         self.input_format = self.settings['input_format']
-        self.corpus_dir = os.path.join('../corpus', self.name)
+        self.corpus_dir = os.path.join(data_dir, 'corpus', self.name)
         self.lowerWf = False
         if 'wf_lowercase' not in self.settings or self.settings['wf_lowercase']:
             self.lowerWf = True
@@ -648,9 +651,11 @@ class Indexator:
             if len(lexFreqs) <= 0:
                 continue
 
-            if not os.path.exists('../search/web_app/templates/dictionaries'):
-                os.makedirs('../search/web_app/templates/dictionaries')
-            fOut = open(os.path.join('../search/web_app/templates/dictionaries', 'dictionary_' + self.settings['corpus_name']
+            dictionaries_dir = os.path.join(self.tsakorpus_dir, 'search/web_app/templates/dictionaries')
+
+            if not os.path.exists(dictionaries_dir):
+                os.makedirs(dictionaries_dir)
+            fOut = open(os.path.join(dictionaries_dir, 'dictionary_' + self.settings['corpus_name']
                                      + '_' + self.languages[langID] + '.html'), 'w', encoding='utf-8')
             fOut.write('<h1 class="dictionary_header"> {{ _(\'Dictionary_header\') }} '
                        '({{ _(\'langname_' + self.languages[langID] + '\') }})</h1>\n')
@@ -816,7 +821,7 @@ class Indexator:
                 and 'fulltext_id' in meta):
             fnameOut = meta['fulltext_id'] + '.json'
             self.j2h.process_file(fname,
-                                  os.path.join('../search/corpus_html',
+                                  os.path.join(self.tsakorpus_dir, 'search/corpus_html',
                                                self.name,
                                                fnameOut))
         self.dID += 1
@@ -905,10 +910,12 @@ class Indexator:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Index corpus in Elasticsearch 7.x.')
-    parser.add_argument('-y', help='overwrite existing database without asking first')
+    parser.add_argument('-y', action='store_true', help='overwrite existing database without asking first')
+    parser.add_argument('--data-dir', help='directory containing /conf and /corpus', default='..')
+    parser.add_argument('--tsakorpus-dir', help='tsakorpus source directory', default='..')
     args = parser.parse_args()
     overwrite = False
     if args.y is not None:
         overwrite = True
-    x = Indexator(overwrite)
+    x = Indexator(overwrite, args.tsakorpus_dir, args.data_dir)
     x.load_corpus()
